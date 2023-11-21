@@ -1,0 +1,369 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: questr
+
+---
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: questr-ingress
+  namespace: questr
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - appquestr.test
+        - www.appquestr.test
+        - api.appquestr.test
+      secretName: questr-tls
+  rules:
+    - host: www.appquestr.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: questr-frontend-service
+                port:
+                  number: 80
+    - host: appquestr.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: questr-frontend-service
+                port:
+                  number: 80
+    - host: api.appquestr.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: questr-api-gateway-service
+                port:
+                  number: 5000
+
+---
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: questr-websocket-ingress
+  namespace: questr
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/websocket-services: "questr-api-gateway-service" 
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600" 
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 600m
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/secure-backends: "true"
+    nginx.org/client-max-body-size: "10m"
+    nginx.org/websocket-services: "questr-api-gateway-service" 
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - socket.appquestr.test
+      secretName: questr-tls
+  rules:
+    - host: socket.appquestr.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: questr-api-gateway-service
+                port:
+                  number: 1000
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questr-frontend
+  namespace: questr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: questr-frontend
+  template:
+    metadata:
+      labels:
+        app: questr-frontend
+    spec:
+      containers:
+      - name: questr-frontend
+        image: registry.digitalocean.com/questr/questr-frontend:latest
+        imagePullPolicy: Always 
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: questr-frontend-service
+  namespace: questr
+spec:
+  selector:
+    app: questr-frontend
+  type: ClusterIP 
+  ports:
+  - name: port-80
+    protocol: TCP
+    port: 80
+    targetPort: 80
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questr-api-gateway
+  namespace: questr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: questr-api-gateway
+  template:
+    metadata:
+      labels:
+        app: questr-api-gateway
+    spec:
+      containers:
+      - name: questr-api-gateway
+        image: registry.digitalocean.com/questr/questr-api-gateway:latest
+        imagePullPolicy: Always 
+        env:
+          - name: AUTH_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: AUTH_SERVICE
+          - name: USER_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: USER_SERVICE
+          - name: QUESTION_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: QUESTION_SERVICE
+        ports:
+        - containerPort: 1000
+        - containerPort: 5000
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: questr-api-gateway-service
+  namespace: questr
+spec:
+  selector:
+    app: questr-api-gateway
+  type: ClusterIP 
+  ports:
+  - name: port-5000
+    protocol: TCP
+    port: 5000
+    targetPort: 5000
+  - name: port-1000
+    protocol: TCP
+    port: 1000
+    targetPort: 1000
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questr-auth-microservice
+  namespace: questr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: questr-auth-microservice
+  template:
+    metadata:
+      labels:
+        app: questr-auth-microservice
+    spec:
+      containers:
+      - name: questr-auth-microservice
+        image: registry.digitalocean.com/questr/questr-auth-microservice:latest
+        imagePullPolicy: Always 
+        env:
+          - name: JWT_SECRET
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: JWT_SECRET
+          - name: USER_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: USER_SERVICE
+        ports:
+        - containerPort: 5001
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: questr-auth-microservice-service
+  namespace: questr
+spec:
+  selector:
+    app: questr-auth-microservice
+  type: NodePort 
+  ports:
+  - name: port-5001
+    protocol: TCP 
+    port: 5001
+    targetPort: 5001
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questr-user-microservice
+  namespace: questr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: questr-user-microservice
+  template:
+    metadata:
+      labels:
+        app: questr-user-microservice
+    spec:
+      containers:
+      - name: questr-user-microservice
+        image: registry.digitalocean.com/questr/questr-user-microservice:latest
+        imagePullPolicy: Always 
+        env:
+          - name: S3_ACCESS_KEY
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: S3_ACCESS_KEY
+          - name: S3_SECRET_KEY
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: S3_SECRET_KEY
+          - name: S3_REGION
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: S3_REGION
+          - name: S3_BUCKET
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: S3_BUCKET
+          - name: MONGODB_URL
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: MONGODB_URL
+        ports:
+        - containerPort: 5002
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: questr-user-microservice-service
+  namespace: questr
+spec:
+  selector:
+    app: questr-user-microservice
+  type: NodePort 
+  ports:
+  - name: port-5002
+    protocol: TCP 
+    port: 5002
+    targetPort: 5002
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questr-question-microservice
+  namespace: questr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: questr-question-microservice
+  template:
+    metadata:
+      labels:
+        app: questr-question-microservice
+    spec:
+      containers:
+      - name: questr-question-microservice
+        image: registry.digitalocean.com/questr/questr-question-microservice:latest
+        imagePullPolicy: Always 
+        env:
+          - name: USER_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: USER_SERVICE
+          - name: MONGODB_URL
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: MONGODB_URL
+        ports:
+        - containerPort: 5003
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: questr-question-microservice-service
+  namespace: questr
+spec:
+  selector:
+    app: questr-question-microservice
+  type: NodePort 
+  ports:
+  - name: port-5003
+    protocol: TCP
+    port: 5003
+    targetPort: 5003

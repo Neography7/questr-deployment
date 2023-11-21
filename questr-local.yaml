@@ -1,0 +1,299 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: questr
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questr-frontend
+  namespace: questr
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: questr-frontend
+  template:
+    metadata:
+      labels:
+        app: questr-frontend
+    spec:
+      containers:
+      - name: questr-frontend
+        image: questr-frontend:latest
+        imagePullPolicy: Never
+        env:
+          - name: VITE_BACKEND_URL
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: VITE_BACKEND_URL
+          - name: VITE_SOCKET_URL
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: VITE_SOCKET_URL
+        ports:
+        - containerPort: 80
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: questr-frontend-service
+  namespace: questr
+spec:
+  selector:
+    app: questr-frontend
+  type: LoadBalancer 
+  ports:
+  - name: port-80
+    protocol: TCP
+    port: 80
+    targetPort: 80
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questr-api-gateway
+  namespace: questr
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: questr-api-gateway
+  template:
+    metadata:
+      labels:
+        app: questr-api-gateway
+    spec:
+      containers:
+      - name: questr-api-gateway
+        image: questr-api-gateway:latest
+        imagePullPolicy: Never
+        env:
+          - name: AUTH_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: AUTH_SERVICE
+          - name: USER_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: USER_SERVICE
+          - name: QUESTION_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: QUESTION_SERVICE
+        ports:
+        - containerPort: 1000
+        - containerPort: 5000
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: questr-api-gateway-service
+  namespace: questr
+spec:
+  selector:
+    app: questr-api-gateway
+  type: LoadBalancer 
+  ports:
+  - name: port-5000
+    protocol: TCP
+    port: 5000
+    targetPort: 5000
+  - name: port-1000
+    protocol: TCP
+    port: 1000
+    targetPort: 1000
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questr-auth-microservice
+  namespace: questr
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: questr-auth-microservice
+  template:
+    metadata:
+      labels:
+        app: questr-auth-microservice
+    spec:
+      containers:
+      - name: questr-auth-microservice
+        image: questr-auth-microservice:latest
+        imagePullPolicy: Never
+        env:
+          - name: JWT_SECRET
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: JWT_SECRET
+          - name: USER_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: USER_SERVICE
+        ports:
+        - containerPort: 5001
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: questr-auth-microservice-service
+  namespace: questr
+spec:
+  selector:
+    app: questr-auth-microservice
+  type: NodePort 
+  ports:
+  - name: port-5001
+    protocol: TCP 
+    port: 5001
+    targetPort: 5001
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questr-user-microservice
+  namespace: questr
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: questr-user-microservice
+  template:
+    metadata:
+      labels:
+        app: questr-user-microservice
+    spec:
+      containers:
+      - name: questr-user-microservice
+        image: questr-user-microservice:latest
+        imagePullPolicy: Never
+        env:
+          - name: S3_ACCESS_KEY
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: S3_ACCESS_KEY
+          - name: S3_SECRET_KEY
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: S3_SECRET_KEY
+          - name: S3_REGION
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: S3_REGION
+          - name: S3_BUCKET
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: S3_BUCKET
+          - name: MONGODB_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: MONGODB_HOST
+          - name: MONGODB_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: MONGODB_PORT
+        ports:
+        - containerPort: 5002
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: questr-user-microservice-service
+  namespace: questr
+spec:
+  selector:
+    app: questr-user-microservice
+  type: NodePort 
+  ports:
+  - name: port-5002
+    protocol: TCP 
+    port: 5002
+    targetPort: 5002
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questr-question-microservice
+  namespace: questr
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: questr-question-microservice
+  template:
+    metadata:
+      labels:
+        app: questr-question-microservice
+    spec:
+      containers:
+      - name: questr-question-microservice
+        image: questr-question-microservice:latest
+        imagePullPolicy: Never
+        env:
+          - name: USER_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: USER_SERVICE
+          - name: MONGODB_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: MONGODB_HOST
+          - name: MONGODB_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: questr-configmap
+                key: MONGODB_PORT
+        ports:
+        - containerPort: 5003
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: questr-question-microservice-service
+  namespace: questr
+spec:
+  selector:
+    app: questr-question-microservice
+  type: NodePort 
+  ports:
+  - name: port-5003
+    protocol: TCP
+    port: 5003
+    targetPort: 5003

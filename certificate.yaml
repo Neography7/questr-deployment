@@ -1,0 +1,33 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt-nginx
+  namespace: questr
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: 
+    privateKeySecretRef:
+      name: letsencrypt-nginx
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: questr-certificate
+  namespace: questr
+spec:
+  secretName: questr-tls
+  issuerRef:
+    name: letsencrypt-nginx
+    kind: Issuer
+  dnsNames:
+    - questr.test
+    - questr.test
+    - api.questr.test
+    - socket.questr.test
